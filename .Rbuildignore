@@ -12,6 +12,7 @@
 ^\.RData$
 ^\.Rhistory$
 ^temp.*\.txt$
+^wjags\.exe$
 ^tests/testthat/testthat-problems\.rds$
 ^.*\.Rcheck$
 ^.*\.tar\.gz$
