@@ -56,6 +56,10 @@ For missing data: Ensure that there are no NA values in your data, perform the n
 The formatting function produces an object that contains a table with all exposure variables, all covariates and the lowest level of microbiome outcome data. Additionally, the function produces binary matrices that represent the relationship between each level of microbiome data and the level above it.
 
 The BaHZING model function provides results from the Bayesian hierarchical zero-inflated negative binomial regression model.
+By default, `BaHZING_Model()` and `Ridge_BaHZING_Model()` include the log of
+each sample's total sequencing-library size as an offset in both the count and
+zero-inflation predictors. Set `offset = FALSE` to fit the models without this
+adjustment.
 
 ## Example
 For a quick start, we utilize data from the iHMP publicly available data set. This example will guide you through the process of using BaHZING for analyzing environmental mixture exposures with hierarchical gut microbiome outcome data.
@@ -105,7 +109,8 @@ bahzing_resout <- BaHZING_Model(formatted_data,
                          n.adapt = 60,
                          n.iter.burnin = 2,
                          n.iter.sample = 50,
-                         seed = 123)
+                         seed = 123,
+                         offset = TRUE)
 ```
 
 

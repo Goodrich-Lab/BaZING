@@ -50,6 +50,9 @@
 #' the dispersion estimates from the BaHZING model.
 #' @param ROPE_range Region of practical equivalence (ROPE) for calculating
 #' p_rope. Default is c(-0.1, 0.1).
+#' @param offset Logical; if TRUE (default), include the log of each sample's
+#' total library size as an offset in both the count and zero-inflation model
+#' predictors. If FALSE, no library-size offset is used.
 #' @return A data frame containing results of the Bayesian analysis, with the
 #' following columns:
 #' - taxa_full: Full Taxa information, including all levels of the taxonomy.
@@ -105,9 +108,12 @@ Ridge_BaHZING_Model <- function(formatted_data,
                                 verbose = TRUE,
                                 return_all_estimates = FALSE,
                                 ROPE_range = c(-0.1, 0.1),
-                                seed = NULL) {
+                                seed = NULL,
+                                offset = TRUE) {
 
-  # Added by HW based on Yanqi's modification for BaHZING
+  if (!is.logical(offset) || length(offset) != 1L || is.na(offset)) {
+    stop("offset must be either TRUE or FALSE.")
+  }
 
   # JAGS has its own RNG, independent of R's - set.seed() alone has no effect
   # on it. Reproducible runs require explicit .RNG.name/.RNG.seed per chain
@@ -232,9 +238,21 @@ Ridge_BaHZING_Model <- function(formatted_data,
 
   # 4. Format microbiome matricies ----
   #Create outcome dataframe
-  Y <- exposure_covar_dat[, grep("k__", names(exposure_covar_dat))]
+  Y <- exposure_covar_dat[, grep("k__", names(exposure_covar_dat)), drop = FALSE]
   N <- nrow(Y)
   R <- ncol(Y)
+
+  # A unit library size makes log(L) exactly zero when the offset is disabled,
+  # so the same JAGS model text supports both settings.
+  if (offset) {
+    library_size <- rowSums(Y)
+    if (any(!is.finite(library_size) | library_size <= 0)) {
+      stop("Library sizes must be finite and greater than zero when offset = TRUE.")
+    }
+  } else {
+    library_size <- rep(1, N)
+  }
+  L <- matrix(library_size, ncol = 1L)
   #Genus
   Z.s.g <- t(formatted_data$Species.Genus.Matrix)
   GenusData <- as.matrix(Y) %*% Z.s.g %>% as.data.frame()
@@ -285,6 +303,7 @@ Ridge_BaHZING_Model <- function(formatted_data,
     if (exposure_standardization == "quantile"){
       message(paste0("Exposure standardization: Quantiles, with q = ", q))
     }
+    message("Library size offset: ", if (offset) "Included" else "Not included")
   }
 
   # 6. Define Model ----
@@ -299,11 +318,11 @@ Ridge_BaHZING_Model <- function(formatted_data,
         mu[i,r] <- disp[r]/(disp[r]+(1-zero[i,r])*lambda[i,r]) - 0.000001*zero[i,r]
 
         # means component
-        log(lambda[i,r]) <- alpha[r] + inprod(beta[r,1:P.e], X.q[i,1:P.e]) + inprod(delta[r, 1:Q], W[i,1:Q])
+        log(lambda[i,r]) <- alpha[r] + inprod(beta[r,1:P.e], X.q[i,1:P.e]) + inprod(delta[r, 1:Q], W[i,1:Q]) + log(L[i,1])
 
         # zero inflation component
         zero[i,r] ~ dbern(pi[i,r])
-        logit(pi[i,r]) <- alpha.zero[r] + inprod(beta.zero[r,1:P.e], X.q[i,1:P.e]) + inprod(delta.zero[r, 1:Q], W[i,1:Q])
+        logit(pi[i,r]) <- alpha.zero[r] + inprod(beta.zero[r,1:P.e], X.q[i,1:P.e]) + inprod(delta.zero[r, 1:Q], W[i,1:Q]) + log(L[i,1])
       }
       # prior on dispersion parameter
       disp[r] ~ dunif(0,50)
@@ -357,11 +376,11 @@ Ridge_BaHZING_Model <- function(formatted_data,
         mu[i,r] <- disp[r]/(disp[r]+(1-zero[i,r])*lambda[i,r]) - 0.000001*zero[i,r]
 
         # means component
-        log(lambda[i,r]) <- alpha[r] + inprod(beta[r,1:P.e], X.q[i,1:P.e])
+        log(lambda[i,r]) <- alpha[r] + inprod(beta[r,1:P.e], X.q[i,1:P.e]) + log(L[i,1])
 
         # zero inflation component
         zero[i,r] ~ dbern(pi[i,r])
-        logit(pi[i,r]) <- alpha.zero[r] + inprod(beta.zero[r,1:P.e], X.q[i,1:P.e])
+        logit(pi[i,r]) <- alpha.zero[r] + inprod(beta.zero[r,1:P.e], X.q[i,1:P.e]) + log(L[i,1])
       }
       # prior on dispersion parameter
       disp[r] ~ dunif(0,50)
@@ -402,15 +421,14 @@ Ridge_BaHZING_Model <- function(formatted_data,
     # Prepare data list
     if (is.null(W)|is.null(Q)){
       jdata <- list(N=N, Y=data, P.s=num, X.q=X.q, P.e=P,
-                    profiles=profiles)
+                    profiles=profiles, L=L)
     }else{
       jdata <- list(N=N, Y=data, P.s=num, X.q=X.q, P.e=P, W=W, Q=Q,
-                    profiles=profiles)
+                    profiles=profiles, L=L)
     }
     # Variables to monitor
     var.s <- c("beta", "beta.zero","psi","disp")
 
-    # Added by HW based on Yanqi's modificaiton for BaHZING---
     if (is.null(jags_inits)) {
       # Without an explicit seed, each chain still needs a distinct RNG seed
       # decided here in the parent process before forking - a forked child's
@@ -429,7 +447,6 @@ Ridge_BaHZING_Model <- function(formatted_data,
     # model.fit <- coda.samples(model=model.fit, variable.names=var.s,
     #                           n.iter=n.iter.sample, thin=1, progress.bar="text")
     #
-    # Modified by HW based on Yanqi's update for BaHZING
     run_one_chain <- function(i) {
       m <- jags.model(file=textConnection(jags_model_func), data=jdata,
                       inits=list(jags_inits[[i]]), n.chains=1, n.adapt=n.adapt,
@@ -485,7 +502,6 @@ Ridge_BaHZING_Model <- function(formatted_data,
     #
     # p_value_df <- data.frame(name = names(pdir), pdir = pdir, prope = prope, pmap = pmap)
 
-    # Modified by HW to improve efficiency based on Yanqi's update for BaHZING
     post_dist <- as.matrix(model.fit[[1]])[, grep("beta|zero|psi", colnames(model.fit[[1]])), drop = FALSE]
 
 

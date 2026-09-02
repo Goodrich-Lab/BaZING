@@ -67,7 +67,11 @@ matrices that represent the relationship between each level of
 microbiome data and the level above it.
 
 The BaHZING model function provides results from the Bayesian
-hierarchical zero-inflated negative binomial regression model.
+hierarchical zero-inflated negative binomial regression model. By
+default, `BaHZING_Model()` and `Ridge_BaHZING_Model()` include the log
+of each sample’s total sequencing-library size as an offset in both the
+count and zero-inflation predictors. Set `offset = FALSE` to fit the
+models without this adjustment.
 
 ## Example
 
@@ -125,7 +129,8 @@ bahzing_resout <- BaHZING_Model(formatted_data,
                          n.adapt = 60,
                          n.iter.burnin = 2,
                          n.iter.sample = 50,
-                         seed = 123)
+                         seed = 123,
+                         offset = TRUE)
 #> #### Checking input data ####
 #> Exposure and Covariate Data:
 #> - Total sample size: 105
@@ -138,13 +143,14 @@ bahzing_resout <- BaHZING_Model(formatted_data,
 #> - Number of unique phylum in data: 5
 #> #### Running BaHZING with the following parameters ####
 #> Exposure standardization: None
+#> Library size offset: Included
 #> Compiling model graph
 #>    Resolving undeclared variables
 #>    Allocating nodes
 #> Graph information:
 #>    Observed stochastic nodes: 23310
 #>    Unobserved stochastic nodes: 27092
-#>    Total graph size: 346911
+#>    Total graph size: 351561
 #> 
 #> Initializing model
 ```

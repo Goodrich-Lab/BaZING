@@ -50,6 +50,21 @@ test_that("test Ridge_BaHZING_Model", {
                            n.iter.sample= 2,
                            counterfactual_profiles = c(-0.5, 0.5),
                            q = 2)
+  
+  testthat::expect_equal(object = ncol(results), expected = 11)
+  
+    ## Test BaH-ZING without library offset ----
+  results <- Ridge_BaHZING_Model(formatted_data = formatted_data,
+                           covar = NULL,
+                           x = x,
+                           exposure_standardization = "standard_normal",
+                           n.chains = 1,
+                           n.adapt = 60,
+                           n.iter.burnin = 2,
+                           n.iter.sample= 2,
+                           counterfactual_profiles = c(-0.5, 0.5),
+                           q = 2,
+                           offset = FALSE)
 
   testthat::expect_equal(object = ncol(results), expected = 11)
 
@@ -66,20 +81,6 @@ test_that("test Ridge_BaHZING_Model", {
 
   testthat::expect_equal(object = ncol(results), expected = 11)
 
-
-  # ## BaH-ZING without informative prior ----
-  # results <- Ridge_BaHZING_Model(formatted_data = formatted_data,
-  #                          covar = NULL,
-  #                          x = x,
-  #                          exposure_standardization = "standard_normal",
-  #                          n.chains = 1,
-  #                          n.adapt = 60,
-  #                          n.iter.burnin = 2,
-  #                          n.iter.sample= 2,
-  #                          counterfactual_profiles = c(-0.5, 0.5),
-  #                          q = 2)
-  #
-  # testthat::expect_equal(object = ncol(results), expected = 11)
 
   # Test Errors ----
 
@@ -127,5 +128,11 @@ test_that("test Ridge_BaHZING_Model", {
                   x = x,
                   counterfactual_profiles = matrix(c(rep("A", 4)), nrow = 2, ncol = 2)),
     "counterfactual_profiles must be numeric.")
+
+  testthat::expect_error(
+    Ridge_BaHZING_Model(formatted_data = formatted_data,
+                        x = x,
+                        offset = NA),
+    "offset must be either TRUE or FALSE")
 
 })

@@ -59,6 +59,9 @@
 #' p_rope. Default is c(-0.1, 0.1).
 #' @param return_posterior If TRUE, the full posterior MCMC samples are
 #' returned alongside the results data frame. Default is FALSE.
+#' @param offset Logical; if TRUE (default), include the log of each sample's
+#' total library size as an offset in both the count and zero-inflation model
+#' predictors. If FALSE, no library-size offset is used.
 #' @return A data frame containing results of the Bayesian analysis, with the
 #' following columns:
 #' - taxa_full: Full Taxa information, including all levels of the taxonomy.
@@ -325,17 +328,21 @@ globalVariables(c("X2.5.", "X97.5.", "Mean",
 #'   variants). Confirmed by diffing the two original literal model strings:
 #'   covariate terms only ever appear in this block - every other level's
 #'   text is identical between the with/without-covariates variants.
+#' @param has_offset Logical. Whether to add `log(L[i,1])` to the count and
+#'   zero-inflation predictors.
 #' @return A length-1 character string: the complete data-likelihood-level
 #'   JAGS block.
 #' @keywords internal
 #' @noRd
-.bahzing_narrowest_level_block <- function(taxa_levels, i, has_covar) {
+.bahzing_narrowest_level_block <- function(taxa_levels, i, has_covar,
+                                            has_offset = TRUE) {
   cur    <- .bahzing_level_vars(taxa_levels, i)
   parent <- .bahzing_level_vars(taxa_levels, i - 1)
   level  <- cur$level
 
   covar_lambda <- if (has_covar) " + inprod(delta[r, 1:Q], W[i,1:Q])" else ""
   covar_pi     <- if (has_covar) " + inprod(delta.zero[r, 1:Q], W[i,1:Q])" else ""
+  offset_term  <- if (has_offset) " + log(L[i,1])" else ""
   covar_prior  <- if (has_covar)
 "
       # prior on covariate effects
@@ -354,11 +361,11 @@ globalVariables(c("X2.5.", "X97.5.", "Mean",
       for(i in 1:N) {
         Y[i,r] ~ dnegbin(mu[i,r], disp[r])
         mu[i,r] <- disp[r]/(disp[r]+(1-zero[i,r])*lambda[i,r]) - 0.000001*zero[i,r]
-        log(lambda[i,r]) <- alpha[r] + inprod(<<level>>.beta[r,1:P], X.q[i,1:P])<<covar_lambda>>
+        log(lambda[i,r]) <- alpha[r] + inprod(<<level>>.beta[r,1:P], X.q[i,1:P])<<covar_lambda>><<offset_term>>
 
         # zero-inflation
         zero[i,r] ~ dbern(pi[i,r])
-        logit(pi[i,r]) <- alpha.zero[r] + inprod(<<level>>.beta.zero[r,1:P], X.q[i,1:P])<<covar_pi>>
+        logit(pi[i,r]) <- alpha.zero[r] + inprod(<<level>>.beta.zero[r,1:P], X.q[i,1:P])<<covar_pi>><<offset_term>>
       }
       # prior on dispersion parameter
       disp[r] ~ dunif(0,50)
@@ -390,18 +397,21 @@ globalVariables(c("X2.5.", "X97.5.", "Mean",
 #' @param has_covar Logical. Whether the model includes covariates - passed
 #'   straight through to `.bahzing_narrowest_level_block()`, the only level
 #'   that varies its text based on this (see that function for why).
+#' @param has_offset Logical. Whether the narrowest-level likelihood includes
+#'   the library-size offset.
 #' @return A length-1 character string: the complete JAGS model text, from
 #'   `model {` through the final closing `}`.
 #' @keywords internal
 #' @noRd
-.bahzing_build_model_text <- function(taxa_levels, has_covar) {
+.bahzing_build_model_text <- function(taxa_levels, has_covar,
+                                      has_offset = TRUE) {
   n <- length(taxa_levels)
   blocks <- vector("list", n)
   for (i in seq_len(n)) {
     blocks[[i]] <- if (i == n) {
       # Narrowest level: the data-likelihood role. Always has a parent
       # (n >= 2 is enforced by validate_taxa_levels()).
-      .bahzing_narrowest_level_block(taxa_levels, i, has_covar)
+      .bahzing_narrowest_level_block(taxa_levels, i, has_covar, has_offset)
     } else {
       .bahzing_level_block(taxa_levels, i)
     }
@@ -431,7 +441,8 @@ BaHZING_Model <- function(formatted_data,
                           parallel = FALSE,
                           n.cores = NULL,
                           ROPE_range = c(-0.1, 0.1),
-                          return_posterior = FALSE) {
+                          return_posterior = FALSE,
+                          offset = TRUE) {
 
   if (!is.numeric(n.chains) || length(n.chains) != 1L || is.na(n.chains) ||
       !is.finite(n.chains) || n.chains < 1 || n.chains != floor(n.chains)) {
@@ -448,6 +459,9 @@ BaHZING_Model <- function(formatted_data,
       (!is.numeric(n.cores) || length(n.cores) != 1L || is.na(n.cores) ||
        !is.finite(n.cores) || n.cores < 1 || n.cores != floor(n.cores))) {
     stop("n.cores must be NULL or a positive integer.")
+  }
+  if (!is.logical(offset) || length(offset) != 1L || is.na(offset)) {
+    stop("offset must be either TRUE or FALSE.")
   }
 
   # 1. Check input data ----
@@ -600,9 +614,17 @@ BaHZING_Model <- function(formatted_data,
   }
 
   #Create outcome dataframe
-  Y <- exposure_covar_dat[, taxon_columns]
+  Y <- exposure_covar_dat[, taxon_columns, drop = FALSE]
   N <- nrow(Y)
   R <- ncol(Y)
+
+  if (offset) {
+    library_size <- rowSums(Y)
+    if (any(!is.finite(library_size) | library_size <= 0)) {
+      stop("Library sizes must be finite and greater than zero when offset = TRUE.")
+    }
+    L <- matrix(library_size, ncol = 1L)
+  }
 
   # One data.frame + taxon-count per level except the narrowest (species-role)
   # level, e.g. GenusData/Genus.R, FamilyData/Family.R, ... - read from the
@@ -644,14 +666,22 @@ BaHZING_Model <- function(formatted_data,
     if (exposure_standardization == "quantile"){
       message(paste0("Exposure standardization: Quantiles, with q = ", q))
     }
+    message("Library size offset: ", if (offset) "Included" else "Not included")
   }
 
   # 6. Run Model ----
-  BHRM.microbiome <- .bahzing_build_model_text(taxa_levels, has_covar = !is.null(covar))
+  BHRM.microbiome <- .bahzing_build_model_text(
+    taxa_levels,
+    has_covar = !is.null(covar),
+    has_offset = offset
+  )
 
   ### Run JAGs Estimation ----
   # set up for JAGs based on taxonomy
   jdata <- list(N=N, Y=Y, R=R, X.q=X.q, P=P, profiles=profiles)
+  if (offset) {
+    jdata$L <- L
+  }
   for (lvl in names(level_data)) {
     jdata[[paste0(lvl, "Data")]] <- level_data[[lvl]]$data
     jdata[[paste0(lvl, ".R")]] <- level_data[[lvl]]$R

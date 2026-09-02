@@ -69,6 +69,10 @@ p_rope. Default is c(-0.1, 0.1).}
 
 \item{return_posterior}{If TRUE, the full posterior MCMC samples are
 returned alongside the results data frame. Default is FALSE.}
+
+\item{offset}{Logical; if TRUE (default), include the log of each sample's
+total library size as an offset in both the count and zero-inflation model
+predictors. If FALSE, no library-size offset is used.}
 }
 \value{
 A data frame containing results of the Bayesian analysis, with the

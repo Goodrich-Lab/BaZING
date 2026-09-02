@@ -55,6 +55,10 @@ the dispersion estimates from the BaHZING model.}
 
 \item{ROPE_range}{Region of practical equivalence (ROPE) for calculating
 p_rope. Default is c(-0.1, 0.1).}
+
+\item{offset}{Logical; if TRUE (default), include the log of each sample's
+total library size as an offset in both the count and zero-inflation model
+predictors. If FALSE, no library-size offset is used.}
 }
 \value{
 A data frame containing results of the Bayesian analysis, with the

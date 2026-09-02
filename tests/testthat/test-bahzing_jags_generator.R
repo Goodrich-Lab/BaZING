@@ -30,16 +30,35 @@ read_fixture <- function(name) {
   paste(readLines(test_path("fixtures", name)), collapse = "\n")
 }
 
-test_that(".bahzing_build_model_text reproduces the legacy with-covariates model", {
-  generated <- .bahzing_build_model_text(default_taxa_levels, has_covar = TRUE)
+test_that(".bahzing_build_model_text reproduces the no-offset with-covariates model", {
+  generated <- .bahzing_build_model_text(
+    default_taxa_levels, has_covar = TRUE, has_offset = FALSE
+  )
   legacy <- read_fixture("legacy_model_with_covar.txt")
   expect_equal(normalize_jags(generated), normalize_jags(legacy))
 })
 
-test_that(".bahzing_build_model_text reproduces the legacy without-covariates model", {
-  generated <- .bahzing_build_model_text(default_taxa_levels, has_covar = FALSE)
+test_that(".bahzing_build_model_text reproduces the no-offset model without covariates", {
+  generated <- .bahzing_build_model_text(
+    default_taxa_levels, has_covar = FALSE, has_offset = FALSE
+  )
   legacy <- read_fixture("legacy_model_without_covar.txt")
   expect_equal(normalize_jags(generated), normalize_jags(legacy))
+})
+
+test_that(".bahzing_build_model_text adds the historical offset when requested", {
+  generated <- .bahzing_build_model_text(
+    default_taxa_levels, has_covar = TRUE, has_offset = TRUE
+  )
+
+  expect_match(
+    generated,
+    "log\\(lambda\\[i,r\\]\\).*log\\(L\\[i,1\\]\\)"
+  )
+  expect_match(
+    generated,
+    "logit\\(pi\\[i,r\\]\\).*log\\(L\\[i,1\\]\\)"
+  )
 })
 
 test_that(".bahzing_build_model_text places the terminal (no-parent) block at the broadest level for a custom hierarchy", {

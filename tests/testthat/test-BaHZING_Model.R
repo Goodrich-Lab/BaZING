@@ -53,6 +53,22 @@ test_that("test BaHZING_Model", {
 
   testthat::expect_equal(object = ncol(results), expected = 11)
 
+
+  ## Test BaH-ZING without library offset ----
+  results <- BaHZING_Model(formatted_data = formatted_data,
+                           covar = NULL,
+                           x = x,
+                           exposure_standardization = "standard_normal",
+                           n.chains = 1,
+                           n.adapt = 60,
+                           n.iter.burnin = 2,
+                           n.iter.sample= 2,
+                           counterfactual_profiles = c(-0.5, 0.5),
+                           q = 2,
+                           offset = FALSE)
+
+  testthat::expect_equal(object = ncol(results), expected = 11)
+
   ## Test BaH-ZING with quantiles ----
   results <- BaHZING_Model(formatted_data = formatted_data,
                            covar = NULL,
@@ -66,20 +82,6 @@ test_that("test BaHZING_Model", {
 
   testthat::expect_equal(object = ncol(results), expected = 11)
 
-
-  # ## BaH-ZING without informative prior ----
-  # results <- BaHZING_Model(formatted_data = formatted_data,
-  #                          covar = NULL,
-  #                          x = x,
-  #                          exposure_standardization = "standard_normal",
-  #                          n.chains = 1,
-  #                          n.adapt = 60,
-  #                          n.iter.burnin = 2,
-  #                          n.iter.sample= 2,
-  #                          counterfactual_profiles = c(-0.5, 0.5),
-  #                          q = 2)
-  #
-  # testthat::expect_equal(object = ncol(results), expected = 11)
 
   # Test Errors ----
 
@@ -155,6 +157,10 @@ test_that("chain controls are validated before model fitting", {
   testthat::expect_error(
     BaHZING_Model(list(), x = "x", n.cores = 1.5),
     "n.cores must be NULL or a positive integer"
+  )
+  testthat::expect_error(
+    BaHZING_Model(list(), x = "x", offset = NA),
+    "offset must be either TRUE or FALSE"
   )
 })
 
